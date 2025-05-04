@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Award, Droplet, Moon, Monitor, Settings, Bell, User, X, Calendar, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Award, Droplet, Moon, Monitor, Settings, Bell, X, Calendar, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react';
 
 
 
@@ -94,7 +94,7 @@ const useHabitHistory = () => {
   return { historyData, saveCurrentStats, getStatsForDate };
 };
 
-const CalendarView: React.FC<CalendarViewProps> = ({ stats, weeklyChartData, onDateSelect }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ stats, onDateSelect }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarData, setCalendarData] = useState<CalendarDay[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
@@ -214,27 +214,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ stats, weeklyChartData, onD
     setCurrentDate(newDate);
   };
 
-  const handleSaveStats = () => {
-    // Use the selected date or today's date if we're editing today's data
-    const dateKey = selectedDate ? selectedDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
-    const dateData = {
-      Water: stats.Water.current,
-      Sleep: stats.Sleep.current,
-      Screen: stats.Screen.current
-    };
-
-    // Update history with the date's data
-    const newHistory = {
-      ...historyData,
-      [dateKey]: dateData
-    };
-
-    setHistoryData(newHistory);
-    localStorage.setItem('habitHistory', JSON.stringify(newHistory));
-
-    setDataSaved(true);
-    setTimeout(() => setDataSaved(false), 3000); // Hide after 3 seconds
-  };
 
   const handleDateClick = (day: CalendarDay) => {
     setSelectedDate(day.date);
@@ -957,7 +936,6 @@ export default function Home() {
                       {/* Only show quick add/remove buttons for today or past dates */}
                       {(() => {
                         const selectedDateStr = formatDateToLocalString(selectedDate);
-                        const todayStr = formatDateToLocalString(new Date());
 
                         // Create date objects with time set to midnight for consistent comparison
                         const selectedDateOnly = new Date(selectedDate);
