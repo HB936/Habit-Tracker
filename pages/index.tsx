@@ -45,6 +45,25 @@ type CalendarViewProps = {
     Screen: number;
   }>;
   onDateSelect: (date: Date) => void;
+  selectedDateStats: {
+    Water: number;
+    Sleep: number;
+    Screen: number;
+  };
+  setSelectedDateStats: React.Dispatch<React.SetStateAction<{
+    Water: number;
+    Sleep: number;
+    Screen: number;
+  }>>;
+};
+
+
+
+const generateCalendarData = () => {
+  // This function is used to force refresh calendar display
+  // It's called after data updates
+  const event = new Event('forceCalendarUpdate');
+  document.dispatchEvent(event);
 };
 
 const useHabitHistory = () => {
@@ -94,7 +113,13 @@ const useHabitHistory = () => {
   return { historyData, saveCurrentStats, getStatsForDate };
 };
 
-const CalendarView: React.FC<CalendarViewProps> = ({ stats, onDateSelect }) => {
+
+
+const CalendarView: React.FC<CalendarViewProps> = ({
+  stats,
+  onDateSelect,
+  selectedDateStats,
+  setSelectedDateStats }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarData, setCalendarData] = useState<CalendarDay[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
@@ -116,7 +141,25 @@ const CalendarView: React.FC<CalendarViewProps> = ({ stats, onDateSelect }) => {
 
   useEffect(() => {
     generateCalendarData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    // Add event listener for forced updates
+    const handleForceUpdate = () => {
+      // Reload data from localStorage
+      if (typeof window !== 'undefined') {
+        const savedHistory = localStorage.getItem('habitHistory');
+        if (savedHistory) {
+          setHistoryData(JSON.parse(savedHistory));
+        }
+        generateCalendarData();
+      }
+    };
+
+    document.addEventListener('forceCalendarUpdate', handleForceUpdate);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('forceCalendarUpdate', handleForceUpdate);
+    };
   }, [currentDate, historyData, stats]);
 
   const generateCalendarData = () => {
@@ -133,13 +176,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({ stats, onDateSelect }) => {
     // Calculate total days to show in calendar
     const daysInMonth = lastDayOfMonth.getDate();
 
+    // Inside the generateCalendarData function in CalendarView
     const calendarDays: CalendarDay[] = [];
 
     // Previous month days
     const prevMonthLastDay = new Date(year, month, 0).getDate();
     for (let i = firstDayOfWeek - 1; i >= 0; i--) {
       const date = new Date(year, month - 1, prevMonthLastDay - i);
-      const dateKey = date.toISOString().split('T')[0];
+      const dateKey = formatDateToLocalString(date);
       const savedData = historyData[dateKey];
 
       calendarDays.push({
@@ -374,6 +418,12 @@ export default function Home() {
     },
   });
 
+  const [selectedDateStats, setSelectedDateStats] = useState({
+    Water: 0,
+    Sleep: 0,
+    Screen: 0
+  });
+
   const [selectedDate, setSelectedDate] = useState(new Date());
   const { historyData, saveCurrentStats, getStatsForDate } = useHabitHistory();
   const [dataSaved, setDataSaved] = useState(false);
@@ -396,49 +446,149 @@ export default function Home() {
 
   // THEN continue with the rest of the functions
 
-  const handleSaveStats = () => {
-    saveCurrentStats({
-      ...stats,
-      Water: { ...stats.Water, current: stats.Water.current },
-      Sleep: { ...stats.Sleep, current: stats.Sleep.current },
-      Screen: { ...stats.Screen, current: stats.Screen.current }
-    });
+  const handleHistoricalActivityUpdate = (category: StatCategory, value: number) => {
+    setSelectedDateStats(prev => {
+      const newData = { ...prev, [category]: value };
 
+      // Save to localStorage
+      const dateKey = formatDateToLocalString(selectedDate);
+      const savedHistory = localStorage.getItem('habitHistory');
+      const history = savedHistory ? JSON.parse(savedHistory) : {};
+      history[dateKey] = newData;
+      localStorage.setItem('habitHistory', JSON.stringify(history));
+
+      // Force calendar update
+      generateCalendarData();
+
+      return newData;
+    });
+  };
+
+  const incrementHistoricalActivity = (category: StatCategory) => {
+    setSelectedDateStats(prev => {
+      const newValue = prev[category] + 1;
+      const newData = { ...prev, [category]: newValue };
+
+      // Save to localStorage
+      const dateKey = formatDateToLocalString(selectedDate);
+      const savedHistory = localStorage.getItem('habitHistory');
+      const history = savedHistory ? JSON.parse(savedHistory) : {};
+      history[dateKey] = newData;
+      localStorage.setItem('habitHistory', JSON.stringify(history));
+
+      // Force calendar update
+      generateCalendarData();
+
+      return newData;
+    });
+  };
+
+  const decrementHistoricalActivity = (category: StatCategory) => {
+    if (selectedDateStats[category] > 0) {
+      setSelectedDateStats(prev => {
+        const newValue = prev[category] - 1;
+        const newData = { ...prev, [category]: newValue };
+
+        // Save to localStorage
+        const dateKey = formatDateToLocalString(selectedDate);
+        const savedHistory = localStorage.getItem('habitHistory');
+        const history = savedHistory ? JSON.parse(savedHistory) : {};
+        history[dateKey] = newData;
+        localStorage.setItem('habitHistory', JSON.stringify(history));
+
+        // Force calendar update
+        generateCalendarData();
+
+        return newData;
+      });
+    }
+  };
+
+  const saveHistoricalStats = () => {
+    // Format the date for localStorage key
+    const dateKey = formatDateToLocalString(selectedDate);
+
+    // Get current history
+    const savedHistory = localStorage.getItem('habitHistory');
+    const history = savedHistory ? JSON.parse(savedHistory) : {};
+
+    // Update history with new data
+    history[dateKey] = selectedDateStats;
+
+    // Save back to localStorage
+    localStorage.setItem('habitHistory', JSON.stringify(history));
+
+    // Force regenerate calendar data to show updates
+    generateCalendarData();
+
+    // Show success message
     setDataSaved(true);
     setTimeout(() => setDataSaved(false), 3000);
   };
 
+  const handleSaveStats = () => {
+    // Format the date for localStorage key
+    const dateKey = formatDateToLocalString(selectedDate);
+
+    // Create the data entry for this date
+    const dataEntry = {
+      Water: stats.Water.current,
+      Sleep: stats.Sleep.current,
+      Screen: stats.Screen.current
+    };
+
+    // Get current history
+    const savedHistory = localStorage.getItem('habitHistory');
+    const history = savedHistory ? JSON.parse(savedHistory) : {};
+
+    // Update history with new data
+    history[dateKey] = dataEntry;
+
+    // Save back to localStorage
+    localStorage.setItem('habitHistory', JSON.stringify(history));
+
+    // Force regenerate calendar data to show updates
+    generateCalendarData();
+
+    // Show success message
+    setDataSaved(true);
+    setTimeout(() => setDataSaved(false), 3000);
+  };
+
+
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
 
-    // Format dates consistently for comparison - ensure we're only comparing the date part
+    // Format dates consistently for comparison
     const selectedDateStr = formatDateToLocalString(date);
     const todayStr = formatDateToLocalString(new Date());
 
-    console.log('Selected date:', selectedDateStr);
-    console.log('Today date:', todayStr);
+    // Get saved history data
+    const savedHistory = localStorage.getItem('habitHistory');
+    const history = savedHistory ? JSON.parse(savedHistory) : {};
 
-    // Check if selected date is today
     if (selectedDateStr === todayStr) {
       // If today is selected, just use the current stats
-      return;
-    }
-
-    // For other days, load from history if available
-    const savedData = getStatsForDate(date);
-    if (savedData) {
-      setStats(prev => ({
-        Water: { ...prev.Water, current: savedData.Water },
-        Sleep: { ...prev.Sleep, current: savedData.Sleep },
-        Screen: { ...prev.Screen, current: savedData.Screen },
-      }));
+      setSelectedDateStats({
+        Water: stats.Water.current,
+        Sleep: stats.Sleep.current,
+        Screen: stats.Screen.current
+      });
+    } else if (history[selectedDateStr]) {
+      // If there's historical data for the selected date
+      const savedData = history[selectedDateStr];
+      setSelectedDateStats({
+        Water: savedData.Water,
+        Sleep: savedData.Sleep,
+        Screen: savedData.Screen
+      });
     } else {
-      // Reset to zero or default values for days with no data
-      setStats(prev => ({
-        Water: { ...prev.Water, current: 0 },
-        Sleep: { ...prev.Sleep, current: 0 },
-        Screen: { ...prev.Screen, current: 0 },
-      }));
+      // Reset to zero for days with no data
+      setSelectedDateStats({
+        Water: 0,
+        Sleep: 0,
+        Screen: 0
+      });
     }
   };
 
@@ -449,28 +599,25 @@ export default function Home() {
         [category]: { ...prev[category], current: value },
       };
 
-      // Save to localStorage for any date (not just today)
-      setTimeout(() => {
-        // Format the date for localStorage key
-        const dateKey = selectedDate.toISOString().split('T')[0];
+      // Immediately save to localStorage for the selected date
+      const dateKey = formatDateToLocalString(selectedDate);
+      const savedHistory = localStorage.getItem('habitHistory');
+      const history = savedHistory ? JSON.parse(savedHistory) : {};
 
-        // Create entry for this date in history
-        const historyEntry = {
-          Water: category === 'Water' ? value : prev.Water.current,
-          Sleep: category === 'Sleep' ? value : prev.Sleep.current,
-          Screen: category === 'Screen' ? value : prev.Screen.current
-        };
+      // Create or update entry for the selected date
+      const currentEntry = history[dateKey] || {
+        Water: 0,
+        Sleep: 0,
+        Screen: 0
+      };
 
-        // Get current history
-        const savedHistory = localStorage.getItem('habitHistory');
-        const history = savedHistory ? JSON.parse(savedHistory) : {};
+      // Update just this category
+      currentEntry[category] = value;
+      history[dateKey] = currentEntry;
+      localStorage.setItem('habitHistory', JSON.stringify(history));
 
-        // Update history with new data
-        history[dateKey] = historyEntry;
-
-        // Save back to localStorage
-        localStorage.setItem('habitHistory', JSON.stringify(history));
-      }, 300);
+      // Force regenerate calendar data
+      generateCalendarData();
 
       return newStats;
     });
@@ -478,17 +625,28 @@ export default function Home() {
 
   const incrementActivity = (category: StatCategory) => {
     setStats(prev => {
+      const newValue = prev[category].current + 1;
       const newStats = {
         ...prev,
-        [category]: { ...prev[category], current: prev[category].current + 1 },
+        [category]: { ...prev[category], current: newValue },
       };
 
-      const selectedDateKey = selectedDate.toISOString().split('T')[0];
-      const todayKey = new Date().toISOString().split('T')[0];
+      // Immediately save to localStorage
+      const dateKey = formatDateToLocalString(selectedDate);
+      const savedHistory = localStorage.getItem('habitHistory');
+      const history = savedHistory ? JSON.parse(savedHistory) : {};
 
-      if (selectedDateKey === todayKey) {
-        setTimeout(() => saveCurrentStats(newStats), 300);
-      }
+      const currentEntry = history[dateKey] || {
+        Water: 0,
+        Sleep: 0,
+        Screen: 0
+      };
+
+      currentEntry[category] = newValue;
+      history[dateKey] = currentEntry;
+      localStorage.setItem('habitHistory', JSON.stringify(history));
+
+      generateCalendarData();
 
       return newStats;
     });
@@ -497,17 +655,28 @@ export default function Home() {
   const decrementActivity = (category: StatCategory) => {
     if (stats[category].current > 0) {
       setStats(prev => {
+        const newValue = prev[category].current - 1;
         const newStats = {
           ...prev,
-          [category]: { ...prev[category], current: prev[category].current - 1 },
+          [category]: { ...prev[category], current: newValue },
         };
 
-        const selectedDateKey = selectedDate.toISOString().split('T')[0];
-        const todayKey = new Date().toISOString().split('T')[0];
+        // Immediately save to localStorage
+        const dateKey = formatDateToLocalString(selectedDate);
+        const savedHistory = localStorage.getItem('habitHistory');
+        const history = savedHistory ? JSON.parse(savedHistory) : {};
 
-        if (selectedDateKey === todayKey) {
-          setTimeout(() => saveCurrentStats(newStats), 300);
-        }
+        const currentEntry = history[dateKey] || {
+          Water: 0,
+          Sleep: 0,
+          Screen: 0
+        };
+
+        currentEntry[category] = newValue;
+        history[dateKey] = currentEntry;
+        localStorage.setItem('habitHistory', JSON.stringify(history));
+
+        generateCalendarData();
 
         return newStats;
       });
@@ -879,17 +1048,18 @@ export default function Home() {
               stats={stats}
               weeklyChartData={weeklyChartData}
               onDateSelect={handleDateSelect}
+              selectedDateStats={selectedDateStats}
+              setSelectedDateStats={setSelectedDateStats}
             />
 
-            {/* Date detail view */}
             {/* Date detail view */}
             {selectedDate && (
               <div className="mt-6 bg-white rounded-xl shadow-sm p-4">
                 <h4 className="text-lg font-medium mb-4">
                   {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} Habits
                   {(() => {
-                    const selectedDateKey = selectedDate.toISOString().split('T')[0];
-                    const todayKey = new Date().toISOString().split('T')[0];
+                    const selectedDateKey = formatDateToLocalString(selectedDate);
+                    const todayKey = formatDateToLocalString(new Date());
                     return selectedDateKey !== todayKey && (
                       <span className="text-sm text-gray-500 ml-2">(Viewing historical data)</span>
                     );
@@ -908,7 +1078,7 @@ export default function Home() {
                           {category}
                         </label>
                         <span className="text-sm font-medium">
-                          {stats[category].current} / {stats[category].goal} {stats[category].unit}
+                          {selectedDateStats[category]} / {stats[category].goal} {stats[category].unit}
                         </span>
                       </div>
                       <input
@@ -916,18 +1086,17 @@ export default function Home() {
                         min={0}
                         max={category === "Screen" ? 12 : 16}
                         step={category === "Sleep" ? 0.5 : 1}
-                        value={stats[category].current}
-                        onChange={(e) => handleActivityUpdate(category, parseFloat(e.target.value))}
+                        value={selectedDateStats[category]}
+                        onChange={(e) => handleHistoricalActivityUpdate(category, parseFloat(e.target.value))}
                         className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                         style={{
-                          background: `linear-gradient(to right, ${stats[category].color} 0%, ${stats[category].color} ${(stats[category].current / (category === "Screen" ? 12 : 16)) * 100
-                            }%, #e5e7eb ${(stats[category].current / (category === "Screen" ? 12 : 16)) * 100
+                          background: `linear-gradient(to right, ${stats[category].color} 0%, ${stats[category].color} ${(selectedDateStats[category] / (category === "Screen" ? 12 : 16)) * 100
+                            }%, #e5e7eb ${(selectedDateStats[category] / (category === "Screen" ? 12 : 16)) * 100
                             }%, #e5e7eb 100%)`
                         }}
                         disabled={(() => {
                           const selectedTime = selectedDate.getTime();
                           const todayTime = new Date().setHours(0, 0, 0, 0);
-
                           // Disable inputs for future dates
                           return selectedTime > todayTime;
                         })()}
@@ -935,9 +1104,6 @@ export default function Home() {
 
                       {/* Only show quick add/remove buttons for today or past dates */}
                       {(() => {
-                        const selectedDateStr = formatDateToLocalString(selectedDate);
-
-                        // Create date objects with time set to midnight for consistent comparison
                         const selectedDateOnly = new Date(selectedDate);
                         selectedDateOnly.setHours(0, 0, 0, 0);
 
@@ -949,42 +1115,42 @@ export default function Home() {
 
                         return isEditableDate && (
                           <div className="mt-3 flex justify-between items-center">
-                            <button onClick={() => decrementActivity(category)}
+                            <button onClick={() => decrementHistoricalActivity(category)}
                               className="w-12 h-8 flex items-center justify-center rounded-md border border-gray-300 hover:bg-gray-50">
                               -
                             </button>
                             <span className="text-sm">Update {category}</span>
-                            <button onClick={() => incrementActivity(category)}
+                            <button onClick={() => incrementHistoricalActivity(category)}
                               className="w-12 h-8 flex items-center justify-center rounded-md border border-gray-300 hover:bg-gray-50">
                               +
                             </button>
                           </div>
                         );
                       })()}
+
                       {/* Progress indicator */}
                       <div className="mt-2 text-xs text-gray-500">
                         {category === "Screen"
-                          ? `${stats[category].current <= stats[category].goal ? "Within" : "Exceeding"} daily limit`
-                          : `${Math.round((stats[category].current / stats[category].goal) * 100)}% of daily goal`
+                          ? `${selectedDateStats[category] <= stats[category].goal ? "Within" : "Exceeding"} daily limit`
+                          : `${Math.round((selectedDateStats[category] / stats[category].goal) * 100)}% of daily goal`
                         }
                       </div>
                     </div>
                   ))}
                 </div>
 
-                {/* Add Save button for historical dates (if implementing edit functionality) */}
+                {/* Add Save button for historical dates */}
+                {/*First, replace the entire section that shows the "Update Historical Data" button*/}
                 {(() => {
-                  const selectedTime = selectedDate.getTime();
-                  const todayTime = new Date().setHours(0, 0, 0, 0);
+                  const selectedDateStr = formatDateToLocalString(selectedDate);
+                  const todayStr = formatDateToLocalString(new Date());
 
-                  // Only show update button for past dates, not future dates
-                  const isPastDate = selectedTime < todayTime;
-
-                  return isPastDate && (
+                  // Only show update button for past dates, not today or future dates
+                  return selectedDateStr !== todayStr && selectedDate.getTime() <= new Date().setHours(0, 0, 0, 0) && (
                     <div className="mt-6 text-center">
                       <button
                         className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition cursor-pointer"
-                        onClick={handleSaveStats}
+                        onClick={saveHistoricalStats}
                       >
                         Update Historical Data
                       </button>
